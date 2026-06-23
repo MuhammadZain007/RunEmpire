@@ -33,13 +33,16 @@ jobs:
             echo "SUPABASE_KEY=mock" >> .env
           fi
 
-      - name: Decode Keystore
+      - name: Prepare Debug Keystore
         run: |
           if [ -f debug.keystore.base64 ]; then
+            echo "Decoding debug.keystore.base64..."
             base64 -d debug.keystore.base64 > debug.keystore
+          elif [ -f debug.keystore ]; then
+            echo "Using existing debug.keystore..."
           else
-            echo "debug.keystore.base64 file not found!"
-            exit 1
+            echo "No debug keystore found, generating a fallback one..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
       - name: Set up Gradle
