@@ -2,9 +2,11 @@ package com.example.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material3.*
@@ -15,9 +17,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 
@@ -59,21 +63,21 @@ fun SplashScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Icon Background glow effect
+            // Icon Background glow effect with the beautiful generated logo
             Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-                    .background(RunPrimary.copy(alpha = 0.15f))
-                    .padding(16.dp),
+                    .size(120.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(RunSurface)
+                    .padding(4.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.DirectionsRun,
-                    contentDescription = "Runner Logo",
-                    tint = RunPrimary,
+                Image(
+                    painter = painterResource(id = R.drawable.img_app_icon_1782235968951),
+                    contentDescription = "Run Empire Logo",
                     modifier = Modifier
-                        .size(60.dp)
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(20.dp))
                 )
             }
             

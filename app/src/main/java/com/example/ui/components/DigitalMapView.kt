@@ -21,6 +21,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.LatLngPoint
 import com.example.ui.theme.*
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.Priority
+import android.os.Looper
+import androidx.compose.material.icons.filled.MyLocation
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -48,19 +54,52 @@ fun DigitalMapView(
         Configuration.getInstance().osmdroidTileCache = cacheDir
     }
 
-    // Centering state
+    // Fused Location Provider
     val fusedLocationProviderClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     var defaultCenter by remember { mutableStateOf<GeoPoint?>(null) }
-    
+    var currentUserLocation by remember { mutableStateOf<LatLngPoint?>(null) }
+    var hasCenteredOnLiveLocation by remember { mutableStateOf(false) }
+    var triggerRecenter by remember { mutableStateOf(0) }
+    var lastTriggeredRecenter by remember { mutableStateOf(0) }
+
+    // Start a continuous location listener to show live location always
     LaunchedEffect(Unit) {
+        // Query last location first as an initial fallback
         try {
             fusedLocationProviderClient.lastLocation.addOnSuccessListener { loc ->
                 if (loc != null) {
-                    defaultCenter = GeoPoint(loc.latitude, loc.longitude)
+                    val geo = GeoPoint(loc.latitude, loc.longitude)
+                    defaultCenter = geo
+                    currentUserLocation = LatLngPoint(loc.latitude, loc.longitude)
                 }
             }
         } catch (e: SecurityException) {
-            // Permission restricted, fallback to default SF park or London
+            // Permission restricted
+        }
+
+        // Setup continuous GPS tracking
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 4000)
+            .setMinUpdateDistanceMeters(2f)
+            .build()
+
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                super.onLocationResult(result)
+                val loc = result.lastLocation
+                if (loc != null) {
+                    currentUserLocation = LatLngPoint(loc.latitude, loc.longitude)
+                }
+            }
+        }
+
+        try {
+            fusedLocationProviderClient.requestLocationUpdates(
+                request,
+                callback,
+                Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            // Permission restricted
         }
     }
 
@@ -101,6 +140,7 @@ fun DigitalMapView(
                     
                     // Try to center on some point if available initially
                     val initialCenter = points.firstOrNull()?.let { GeoPoint(it.latitude, it.longitude) }
+                        ?: currentUserLocation?.let { GeoPoint(it.latitude, it.longitude) }
                         ?: defaultCenter
                         ?: GeoPoint(37.77490, -122.41940) // Scenic SF center fallback
                     controller.setCenter(initialCenter)
@@ -160,7 +200,7 @@ fun DigitalMapView(
                 }
 
                 // 4. Draw Current Live runner pin
-                val livePinLoc = liveLocation ?: points.lastOrNull()
+                val livePinLoc = liveLocation ?: points.lastOrNull() ?: currentUserLocation
                 if (livePinLoc != null) {
                     val liveGeo = GeoPoint(livePinLoc.latitude, livePinLoc.longitude)
                     val liveMarker = Marker(mapView).apply {
@@ -177,14 +217,35 @@ fun DigitalMapView(
                     }
                     mapView.overlays.add(liveMarker)
                     
-                    // Focus and animate map viewpoint around the current runner position
-                    mapView.controller.animateTo(liveGeo)
+                    // Auto-focus logic:
+                    if (liveLocation != null || points.isNotEmpty()) {
+                        // Focus and animate map viewpoint around active runner position during run
+                        mapView.controller.animateTo(liveGeo)
+                    } else if (!hasCenteredOnLiveLocation) {
+                        // Centering on initial acquired GPS position
+                        mapView.controller.setCenter(liveGeo)
+                        hasCenteredOnLiveLocation = true
+                    }
                 } else if (points.isNotEmpty()) {
                     val lastGeo = GeoPoint(points.last().latitude, points.last().longitude)
                     mapView.controller.animateTo(lastGeo)
                 } else {
                     defaultCenter?.let {
-                        mapView.controller.animateTo(it)
+                        if (!hasCenteredOnLiveLocation) {
+                            mapView.controller.setCenter(it)
+                            hasCenteredOnLiveLocation = true
+                        }
+                    }
+                }
+
+                // Handle manual recenter trigger
+                if (triggerRecenter > lastTriggeredRecenter) {
+                    lastTriggeredRecenter = triggerRecenter
+                    val target = liveLocation ?: points.lastOrNull() ?: currentUserLocation
+                    if (target != null) {
+                        mapView.controller.animateTo(GeoPoint(target.latitude, target.longitude))
+                    } else {
+                        defaultCenter?.let { mapView.controller.animateTo(it) }
                     }
                 }
 
@@ -193,7 +254,7 @@ fun DigitalMapView(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Floating Map Zoom controllers Overlay
+        // Floating Map Zoom & Recenter controllers Overlay
         Card(
             modifier = Modifier
                 .padding(12.dp)
@@ -218,6 +279,15 @@ fun DigitalMapView(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(imageVector = Icons.Default.Remove, contentDescription = "Zoom Out", tint = Color.White)
+                }
+                Divider(color = RunSurfaceVariant, thickness = 1.dp)
+                IconButton(
+                    onClick = {
+                        triggerRecenter += 1
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.MyLocation, contentDescription = "Center on Me", tint = Color.White)
                 }
             }
         }

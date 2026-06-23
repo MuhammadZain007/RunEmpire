@@ -80,8 +80,44 @@ fun RegisterScreen(
                 fontSize = 28.sp,
                 fontWeight = FontWeight.ExtraBold,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
+                modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
             )
+
+            // Supabase / Offline Badge Status Card
+            val isSupabaseConfigured = remember { com.example.data.SupabaseService.isConfigured() }
+            Card(
+                modifier = Modifier
+                    .wrapContentWidth()
+                    .padding(bottom = 24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isSupabaseConfigured) Color(0xFF10B981).copy(alpha = 0.12f)
+                                     else Color(0xFFF59E0B).copy(alpha = 0.12f)
+                ),
+                shape = RoundedCornerShape(100.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                color = if (isSupabaseConfigured) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                shape = androidx.compose.foundation.shape.CircleShape
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isSupabaseConfigured) "Supabase Connected"
+                               else "Offline Mode (Local Fallback)",
+                        color = if (isSupabaseConfigured) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
 
             // Errors
             if (authState is AuthState.Error) {

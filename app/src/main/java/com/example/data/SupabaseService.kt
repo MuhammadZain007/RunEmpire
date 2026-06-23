@@ -17,9 +17,15 @@ object SupabaseService {
     private val client = OkHttpClient()
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+    private fun sanitizeSecret(value: String): String {
+        val sanitized = value.trim().removeSurrounding("\"").removeSurrounding("'").trim()
+        Log.d(TAG, "sanitized secret of length ${value.length} to length ${sanitized.length}")
+        return sanitized
+    }
+
     // Retrieve credentials from BuildConfig safely
-    val url: String = try { BuildConfig.SUPABASE_URL } catch (e: Exception) { "" }
-    val key: String = try { BuildConfig.SUPABASE_KEY } catch (e: Exception) { "" }
+    val url: String = try { sanitizeSecret(BuildConfig.SUPABASE_URL) } catch (e: Exception) { "" }
+    val key: String = try { sanitizeSecret(BuildConfig.SUPABASE_KEY) } catch (e: Exception) { "" }
 
     /**
      * Check if the Supabase configuration parameters have been correctly configured by the user.

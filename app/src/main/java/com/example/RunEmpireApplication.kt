@@ -17,6 +17,17 @@ class RunEmpireApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        
+        // Initialize Osmdroid Configuration to resolve tile loading & cache folder initialization
+        try {
+            org.osmdroid.config.Configuration.getInstance().load(
+                this,
+                android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+            )
+            org.osmdroid.config.Configuration.getInstance().userAgentValue = packageName
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     companion object {
