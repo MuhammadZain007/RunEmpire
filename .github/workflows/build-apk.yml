@@ -33,6 +33,15 @@ jobs:
             echo "SUPABASE_KEY=mock" >> .env
           fi
 
+      - name: Decode Keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            echo "debug.keystore.base64 file not found!"
+            exit 1
+          fi
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
