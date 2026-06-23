@@ -1,0 +1,6 @@
+{
+  "name": "Run Empire",
+  "description": "A premium GPS running app where users track runs, save activities, and capture territories by completing loops.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
