@@ -47,7 +47,7 @@ class RunViewModel(
     private val _currentSpeedKmh = MutableStateFlow(0.0)
     val currentSpeedKmh: StateFlow<Double> = _currentSpeedKmh.asStateFlow()
 
-    private val _isSimulatedRun = MutableStateFlow(true) // Simulates paths in emulator by default, can toggle
+    private val _isSimulatedRun = MutableStateFlow(false) // Defaults to real GPS tracking
     val isSimulatedRun: StateFlow<Boolean> = _isSimulatedRun.asStateFlow()
 
     // Real GPS client

@@ -1,8 +1,8 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,17 +13,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.LatLngPoint
 import com.example.ui.theme.*
-import kotlin.math.max
-import kotlin.math.min
+import com.google.android.gms.location.LocationServices
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
+import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import java.io.File
 
 @Composable
 fun DigitalMapView(
@@ -33,266 +39,202 @@ fun DigitalMapView(
     liveLocation: LatLngPoint? = null,
     emptyText: String = "Waiting for GPS signal..."
 ) {
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-
-    // Combine all coordinate points to find the geographic viewport center and span
-    val allPoints = remember(points, territoryPolygons, liveLocation) {
-        val list = mutableListOf<LatLngPoint>()
-        list.addAll(points)
-        territoryPolygons.forEach { list.addAll(it) }
-        liveLocation?.let { list.add(it) }
-        list
+    val context = LocalContext.current
+    
+    // Configure User-Agent and Tile Cache for Offline/Robust Map Handling
+    LaunchedEffect(Unit) {
+        Configuration.getInstance().userAgentValue = context.packageName
+        val cacheDir = File(context.cacheDir, "osmdroid")
+        Configuration.getInstance().osmdroidTileCache = cacheDir
     }
+
+    // Centering state
+    val fusedLocationProviderClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    var defaultCenter by remember { mutableStateOf<GeoPoint?>(null) }
+    
+    LaunchedEffect(Unit) {
+        try {
+            fusedLocationProviderClient.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null) {
+                    defaultCenter = GeoPoint(loc.latitude, loc.longitude)
+                }
+            }
+        } catch (e: SecurityException) {
+            // Permission restricted, fallback to default SF park or London
+        }
+    }
+
+    var mapScale by remember { mutableStateOf(17.5) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
             .background(RunBackground)
-            .pointerInput(allPoints) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(0.5f, 5.0f)
-                    offset += pan
-                }
-            }
     ) {
-        if (allPoints.isEmpty()) {
-            // Empty Map placeholder state
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator(
-                    color = RunPrimary,
-                    strokeWidth = 3.dp,
-                    modifier = Modifier.size(36.dp)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = emptyText,
-                    color = TextSecondary,
-                    fontSize = 14.sp
-                )
-            }
-        } else {
-            // Find bounding box to fit the route on Screen Scale
-            val bounds = remember(allPoints) {
-                var minLat = Double.MAX_VALUE
-                var maxLat = -Double.MAX_VALUE
-                var minLng = Double.MAX_VALUE
-                var maxLng = -Double.MAX_VALUE
-
-                for (p in allPoints) {
-                    minLat = min(minLat, p.latitude)
-                    maxLat = max(maxLat, p.latitude)
-                    minLng = min(minLng, p.longitude)
-                    maxLng = max(maxLng, p.longitude)
-                }
-
-                // Add small default padding buffer
-                val latBuffer = max((maxLat - minLat) * 0.15, 0.001)
-                val lngBuffer = max((maxLng - minLng) * 0.15, 0.001)
-
-                object {
-                    val minLatitude = minLat - latBuffer
-                    val maxLatitude = maxLat + latBuffer
-                    val minLongitude = minLng - lngBuffer
-                    val maxLongitude = maxLng + lngBuffer
-                    val latSpan = (maxLatitude - minLatitude)
-                    val lngSpan = (maxLongitude - minLongitude)
-                }
-            }
-
-            val gridColor = MapGridColor()
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val canvasWidth = size.width
-                val canvasHeight = size.height
-
-                // Draw minimal gridlines in background
-                val gridSize = 60.dp.toPx()
-                val gridStroke = 1.dp.toPx()
-                
-                // Draw horizontal grids
-                var yGrid = 0f
-                while (yGrid < canvasHeight) {
-                    drawLine(
-                        color = gridColor,
-                        start = Offset(0f, yGrid),
-                        end = Offset(canvasWidth, yGrid),
-                        strokeWidth = gridStroke
-                    )
-                    yGrid += gridSize
-                }
-
-                // Draw vertical grids
-                var xGrid = 0f
-                while (xGrid < canvasWidth) {
-                    drawLine(
-                        color = gridColor,
-                        start = Offset(xGrid, 0f),
-                        end = Offset(xGrid, canvasHeight),
-                        strokeWidth = gridStroke
-                    )
-                    xGrid += gridSize
-                }
-
-                // Project coordinate to canvas coordinates
-                fun project(latLng: LatLngPoint): Offset {
-                    // Standard linear equirectangular project:
-                    // x is proportional to longitude
-                    // y is proportional to latitude (negative because Canvas y goes DOWN)
-                    val x = ((latLng.longitude - bounds.minLongitude) / bounds.lngSpan) * canvasWidth
-                    val y = (1.0 - ((latLng.latitude - bounds.minLatitude) / bounds.latSpan)) * canvasHeight
-
-                    // Apply dynamic pan offset & touch zoom around canvas center
-                    val centerX = canvasWidth / 2f
-                    val centerY = canvasHeight / 2f
+        AndroidView(
+            factory = { ctx ->
+                MapView(ctx).apply {
+                    setTileSource(TileSourceFactory.MAPNIK)
+                    setMultiTouchControls(true)
+                    isTilesScaledToDpi = true
+                    zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
                     
-                    val zoomedX = (x.toFloat() - centerX) * scale + centerX + offset.x
-                    val zoomedY = (y.toFloat() - centerY) * scale + centerY + offset.y
-                    return Offset(zoomedX, zoomedY)
-                }
+                    // Apply Sleek Futuristic Slate Night Theme via Color Filter
+                    val darkMatrix = ColorMatrix().apply { setSaturation(0.25f) }
+                    val invertMatrix = ColorMatrix(floatArrayOf(
+                        -0.85f, 0f, 0f, 0f, 230f,
+                        0f, -0.85f, 0f, 0f, 230f,
+                        0f, 0f, -0.85f, 0f, 230f,
+                        0f, 0f, 0f, 1f, 0f
+                    ))
+                    invertMatrix.postConcat(darkMatrix)
+                    val filter = ColorMatrixColorFilter(invertMatrix)
+                    overlayManager.tilesOverlay.setColorFilter(filter)
 
-                // 1. Draw Saved Territories Polygons
-                for (poly in territoryPolygons) {
-                    if (poly.size >= 3) {
-                        val path = Path()
-                        val firstProjected = project(poly.first())
-                        path.moveTo(firstProjected.x, firstProjected.y)
-                        
-                        for (i in 1 until poly.size) {
-                            val nextProjected = project(poly[i])
-                            path.lineTo(nextProjected.x, nextProjected.y)
+                    // Add dynamic rotation support
+                    val rotationOverlay = RotationGestureOverlay(this)
+                    rotationOverlay.isEnabled = true
+                    overlays.add(rotationOverlay)
+
+                    controller.setZoom(mapScale)
+                    
+                    // Try to center on some point if available initially
+                    val initialCenter = points.firstOrNull()?.let { GeoPoint(it.latitude, it.longitude) }
+                        ?: defaultCenter
+                        ?: GeoPoint(37.77490, -122.41940) // Scenic SF center fallback
+                    controller.setCenter(initialCenter)
+                }
+            },
+            update = { mapView ->
+                // Clear and recreate overlays to avoid duplicates
+                mapView.overlays.clear()
+
+                // Re-add rotation overlay
+                val rotationOverlay = RotationGestureOverlay(mapView)
+                rotationOverlay.isEnabled = true
+                mapView.overlays.add(rotationOverlay)
+
+                // 1. Draw territories (Polygons)
+                territoryPolygons.forEach { polyPoints ->
+                    if (polyPoints.size >= 3) {
+                        val polygon = Polygon(mapView).apply {
+                            setPoints(polyPoints.map { GeoPoint(it.latitude, it.longitude) })
+                            // Emerald Theme colors matching RunEmpire design
+                            fillColor = android.graphics.Color.parseColor("#4010B981") // 25% alpha Emerald
+                            strokeColor = android.graphics.Color.parseColor("#FF10B981") // Solid Emerald
+                            strokeWidth = 5f
                         }
-                        path.close()
-
-                        // Fill Region (Semi-transparent secondary Emerald)
-                        drawPath(
-                            path = path,
-                            color = RunSecondary.copy(alpha = 0.2f)
-                        )
-
-                        // Outline (Dashed Emerald)
-                        drawPath(
-                            path = path,
-                            color = RunSecondary,
-                            style = Stroke(
-                                width = 3.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
-                            )
-                        )
+                        mapView.overlays.add(polygon)
                     }
                 }
 
-                // 2. Draw Active Route Line (Glowing Neon Blue)
+                // 2. Draw active running route (Polyline)
                 if (points.size >= 2) {
-                    val routePath = Path()
-                    val startOffset = project(points.first())
-                    routePath.moveTo(startOffset.x, startOffset.y)
-
-                    for (i in 1 until points.size) {
-                        val pt = project(points[i])
-                        routePath.lineTo(pt.x, pt.y)
+                    val polyline = Polyline(mapView).apply {
+                        setPoints(points.map { GeoPoint(it.latitude, it.longitude) })
+                        // Radiant Neon Blue
+                        color = android.graphics.Color.parseColor("#FF3B82F6")
+                        width = 8f
                     }
-
-                    // Stroke route path
-                    drawPath(
-                        path = routePath,
-                        color = MapPathColor,
-                        style = Stroke(
-                            width = 5.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
-                    )
+                    mapView.overlays.add(polyline)
                 }
 
-                // 3. Draw Start Indicator (Vibrant Blue glow circle)
+                // 3. Draw Start Marker pin
                 if (points.isNotEmpty()) {
-                    val startOffset = project(points.first())
-                    drawCircle(
-                        color = RunPrimary,
-                        radius = 8.dp.toPx(),
-                        center = startOffset
-                    )
-                    drawCircle(
-                        color = Color.White,
-                        radius = 3.dp.toPx(),
-                        center = startOffset
-                    )
+                    val startPt = points.first()
+                    val startMarker = Marker(mapView).apply {
+                        position = GeoPoint(startPt.latitude, startPt.longitude)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Start Node"
+                        // Subtly colored dot as a start node indicator
+                        val drawable = android.graphics.drawable.GradientDrawable().apply {
+                            shape = android.graphics.drawable.GradientDrawable.OVAL
+                            setSize(24, 24)
+                            setColor(android.graphics.Color.WHITE)
+                            setStroke(4, android.graphics.Color.parseColor("#FF3B82F6"))
+                        }
+                        icon = drawable
+                    }
+                    mapView.overlays.add(startMarker)
                 }
 
-                // 4. Draw Current Live Location Runner Pin
+                // 4. Draw Current Live runner pin
                 val livePinLoc = liveLocation ?: points.lastOrNull()
                 if (livePinLoc != null) {
-                    val currentOffset = project(livePinLoc)
-                    // Pulse ring
-                    drawCircle(
-                        color = RunPrimary.copy(alpha = 0.4f),
-                        radius = 16.dp.toPx(),
-                        center = currentOffset
-                    )
-                    // Solid marker
-                    drawCircle(
-                        color = Color.White,
-                        radius = 7.dp.toPx(),
-                        center = currentOffset
-                    )
-                    drawCircle(
-                        color = RunPrimary,
-                        radius = 4.dp.toPx(),
-                        center = currentOffset
-                    )
+                    val liveGeo = GeoPoint(livePinLoc.latitude, livePinLoc.longitude)
+                    val liveMarker = Marker(mapView).apply {
+                        position = liveGeo
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Active Location"
+                        val drawable = android.graphics.drawable.GradientDrawable().apply {
+                            shape = android.graphics.drawable.GradientDrawable.OVAL
+                            setSize(32, 32)
+                            setColor(android.graphics.Color.parseColor("#FF3B82F6")) // Primary neon blue
+                            setStroke(3, android.graphics.Color.WHITE)
+                        }
+                        icon = drawable
+                    }
+                    mapView.overlays.add(liveMarker)
+                    
+                    // Focus and animate map viewpoint around the current runner position
+                    mapView.controller.animateTo(liveGeo)
+                } else if (points.isNotEmpty()) {
+                    val lastGeo = GeoPoint(points.last().latitude, points.last().longitude)
+                    mapView.controller.animateTo(lastGeo)
+                } else {
+                    defaultCenter?.let {
+                        mapView.controller.animateTo(it)
+                    }
                 }
-            }
 
-            // Inline instructions for Zooming & Panning
-            Box(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .align(Alignment.BottomStart)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "Zoom: Pinch to scale • Drag to pan",
-                    color = TextSecondary,
-                    fontSize = 11.sp
-                )
-            }
+                mapView.invalidate()
+            },
+            modifier = Modifier.fillMaxSize()
+        )
 
-            // Floating Map Zoom controllers (Material 3 Touch Ergonomics)
-            Card(
-                modifier = Modifier
-                    .padding(12.dp)
-                    .align(Alignment.TopEnd),
-                colors = CardDefaults.cardColors(containerColor = RunSurface.copy(alpha = 0.9f)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Column(modifier = Modifier.padding(4.dp)) {
-                    IconButton(
-                        onClick = { scale = (scale + 0.3f).coerceAtMost(5.0f) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = "Zoom In", tint = Color.White)
-                    }
-                    Divider(color = RunSurfaceVariant, thickness = 1.dp)
-                    IconButton(
-                        onClick = { scale = (scale - 0.3f).coerceAtLeast(0.5f) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Remove, contentDescription = "Zoom Out", tint = Color.White)
-                    }
+        // Floating Map Zoom controllers Overlay
+        Card(
+            modifier = Modifier
+                .padding(12.dp)
+                .align(Alignment.TopEnd),
+            colors = CardDefaults.cardColors(containerColor = RunSurface.copy(alpha = 0.9f)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(4.dp)) {
+                IconButton(
+                    onClick = {
+                        mapScale = (mapScale + 0.5).coerceAtMost(21.0)
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = "Zoom In", tint = Color.White)
+                }
+                Divider(color = RunSurfaceVariant, thickness = 1.dp)
+                IconButton(
+                    onClick = {
+                        mapScale = (mapScale - 0.5).coerceAtLeast(4.0)
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Remove, contentDescription = "Zoom Out", tint = Color.White)
                 }
             }
         }
+
+        // Inline HUD guidelines
+        Box(
+            modifier = Modifier
+                .padding(8.dp)
+                .align(Alignment.BottomStart)
+                .background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = "OpenStreetMap Active • Pinch to rotate/scale",
+                color = TextSecondary,
+                fontSize = 10.sp
+            )
+        }
     }
 }
-
-// Simple color helper for clean UI matching
-@Composable
-fun MapGridColor(): Color = RunSurfaceVariant.copy(alpha = 0.5f)

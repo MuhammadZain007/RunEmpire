@@ -44,6 +44,9 @@ jobs:
             echo "No debug keystore found, generating a fallback one..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
+          echo "Verifying debug.keystore file exists:"
+          ls -la debug.keystore || echo "debug.keystore not found!"
+          cp debug.keystore app/debug.keystore || echo "Could not copy debug.keystore to app directory"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
