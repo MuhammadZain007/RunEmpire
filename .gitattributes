@@ -1,0 +1,9 @@
+# Force binary files to be treated as binary (prevent line-ending corruption)
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.keystore binary
+*.bin binary

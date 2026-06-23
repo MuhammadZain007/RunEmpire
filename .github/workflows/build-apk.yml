@@ -33,11 +33,13 @@ jobs:
             echo "SUPABASE_KEY=mock" >> .env
           fi
 
-      - name: Grant Execute Permission to Gradlew
-        run: chmod +x gradlew
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.3.1
 
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload Compiled APK
         uses: actions/upload-artifact@v4
