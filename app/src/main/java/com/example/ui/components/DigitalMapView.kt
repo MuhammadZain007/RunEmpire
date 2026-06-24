@@ -49,7 +49,7 @@ fun DigitalMapView(
     
     // Configure User-Agent and Tile Cache for Offline/Robust Map Handling
     LaunchedEffect(Unit) {
-        Configuration.getInstance().userAgentValue = context.packageName
+        Configuration.getInstance().userAgentValue = "RunEmpireSovereignJogger/1.0 (Android; malikzainawan672@gmail.com)"
         val cacheDir = File(context.cacheDir, "osmdroid")
         Configuration.getInstance().osmdroidTileCache = cacheDir
     }

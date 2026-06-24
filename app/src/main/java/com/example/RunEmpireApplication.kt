@@ -24,7 +24,7 @@ class RunEmpireApplication : Application() {
                 this,
                 android.preference.PreferenceManager.getDefaultSharedPreferences(this)
             )
-            org.osmdroid.config.Configuration.getInstance().userAgentValue = packageName
+            org.osmdroid.config.Configuration.getInstance().userAgentValue = "RunEmpireSovereignJogger/1.0 (Android; malikzainawan672@gmail.com)"
         } catch (e: Exception) {
             e.printStackTrace()
         }

@@ -8,10 +8,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.*
+import android.content.Intent
 import com.example.data.model.ActivityEntity
 import com.example.data.model.LatLngPoint
 import com.example.data.model.TerritoryEntity
 import com.example.data.repo.RunRepository
+import com.example.data.service.RunningTrackingService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +51,37 @@ class RunViewModel(
 
     private val _isSimulatedRun = MutableStateFlow(false) // Defaults to real GPS tracking
     val isSimulatedRun: StateFlow<Boolean> = _isSimulatedRun.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            RunningTrackingService.routePoints.collect { points ->
+                if (!_isSimulatedRun.value && RunningTrackingService.isTracking.value) {
+                    _routePoints.value = points
+                }
+            }
+        }
+        viewModelScope.launch {
+            RunningTrackingService.distanceKm.collect { dist ->
+                if (!_isSimulatedRun.value && RunningTrackingService.isTracking.value) {
+                    _distanceKm.value = dist
+                }
+            }
+        }
+        viewModelScope.launch {
+            RunningTrackingService.durationSeconds.collect { dur ->
+                if (!_isSimulatedRun.value && RunningTrackingService.isTracking.value) {
+                    _durationSeconds.value = dur
+                }
+            }
+        }
+        viewModelScope.launch {
+            RunningTrackingService.currentSpeedKmh.collect { speed ->
+                if (!_isSimulatedRun.value && RunningTrackingService.isTracking.value) {
+                    _currentSpeedKmh.value = speed
+                }
+            }
+        }
+    }
 
     // Real GPS client
     private val fusedLocationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
@@ -110,6 +143,16 @@ class RunViewModel(
             _runningState.value = RunningState.Paused
             pauseTimer()
             _currentSpeedKmh.value = 0.0
+            if (!_isSimulatedRun.value) {
+                try {
+                    val intent = Intent(context, RunningTrackingService::class.java).apply {
+                        action = RunningTrackingService.ACTION_PAUSE
+                    }
+                    context.startService(intent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 
@@ -117,6 +160,16 @@ class RunViewModel(
         if (_runningState.value == RunningState.Paused) {
             _runningState.value = RunningState.Active
             startTimer()
+            if (!_isSimulatedRun.value) {
+                try {
+                    val intent = Intent(context, RunningTrackingService::class.java).apply {
+                        action = RunningTrackingService.ACTION_RESUME
+                    }
+                    context.startService(intent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 
@@ -231,36 +284,28 @@ class RunViewModel(
 
     @SuppressLint("MissingPermission")
     private fun startGpsTracking() {
-        stopGpsTracking()
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
-            .setMinUpdateDistanceMeters(1.5f)
-            .build()
-
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                super.onLocationResult(result)
-                if (_runningState.value != RunningState.Active) return
-                val loc = result.lastLocation ?: return
-                
-                // Set speed to km/h
-                val speedKmh = if (loc.hasSpeed()) (loc.speed * 3.6) else 0.0
-                _currentSpeedKmh.value = speedKmh
-                
-                addLocationPoint(loc.latitude, loc.longitude)
-            }
-        }
-
         try {
-            fusedLocationClient.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+            val intent = Intent(context, RunningTrackingService::class.java).apply {
+                action = RunningTrackingService.ACTION_START
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
     private fun stopGpsTracking() {
-        locationCallback?.let {
-            fusedLocationClient.removeLocationUpdates(it)
-            locationCallback = null
+        try {
+            val intent = Intent(context, RunningTrackingService::class.java).apply {
+                action = RunningTrackingService.ACTION_STOP
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
